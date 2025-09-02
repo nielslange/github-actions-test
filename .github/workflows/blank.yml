@@ -34,17 +34,15 @@ jobs:
             cd "$REMOTE_DIR" || exit 1
 
             # Generate JSON output directly
-            cat << 'EOF'
-            {
+            echo '{
               "environment": "STAGING",
-              "timestamp": "$(date -u '+%Y-%m-%d %H:%M:%S UTC')",
-              "wordpress_version": "$(wp core version --allow-root)",
-              "active_theme": "$(wp theme list --status=active --field=name --allow-root)",
-              "active_theme_version": "$(wp theme list --status=active --field=version --allow-root)",
-              "plugins": $(wp plugin list --format=json --fields=name,status,version --allow-root),
-              "themes": $(wp theme list --format=json --fields=name,status,version --allow-root)
-            }
-            EOF
+              "timestamp": "'$(date -u '+%Y-%m-%d %H:%M:%S UTC')'",
+              "wordpress_version": "'$(wp core version --allow-root)'",
+              "active_theme": "'$(wp theme list --status=active --field=name --allow-root)'",
+              "active_theme_version": "'$(wp theme list --status=active --field=version --allow-root)'",
+              "plugins": '$(wp plugin list --format=json --fields=name,status,version --allow-root)',
+              "themes": '$(wp theme list --format=json --fields=name,status,version --allow-root)'
+            }'
 
       # ---------- PRODUCTION ----------
       - name: Build PRODUCTION reports on remote
@@ -64,17 +62,15 @@ jobs:
             cd "$REMOTE_DIR" || exit 1
 
             # Generate JSON output directly
-            cat << 'EOF'
-            {
+            echo '{
               "environment": "PRODUCTION",
-              "timestamp": "$(date -u '+%Y-%m-%d %H:%M:%S UTC')",
-              "wordpress_version": "$(wp core version --allow-root)",
-              "active_theme": "$(wp theme list --status=active --field=name --allow-root)",
-              "active_theme_version": "$(wp theme list --status=active --field=version --allow-root)",
-              "plugins": $(wp plugin list --format=json --fields=name,status,version --allow-root),
-              "themes": $(wp theme list --format=json --fields=name,status,version --allow-root)
-            }
-            EOF
+              "timestamp": "'$(date -u '+%Y-%m-%d %H:%M:%S UTC')'",
+              "wordpress_version": "'$(wp core version --allow-root)'",
+              "active_theme": "'$(wp theme list --status=active --field=name --allow-root)'",
+              "active_theme_version": "'$(wp theme list --status=active --field=version --allow-root)'",
+              "plugins": '$(wp plugin list --format=json --fields=name,status,version --allow-root)',
+              "themes": '$(wp theme list --format=json --fields=name,status,version --allow-root)'
+            }'
 
       # ---------- SAVE OUTPUTS TO FILES ----------
       - name: Save STAGING output
