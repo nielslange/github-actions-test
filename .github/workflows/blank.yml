@@ -30,11 +30,11 @@ jobs:
             set -euo pipefail
             REMOTE_DIR=~/www/staging.nielslange.de/public_html
             cd "$REMOTE_DIR" || exit 1
-            '=== WordPress core ==='
+            echo "=== WordPress core ==="
             wp core version --allow-root
-            '=== WordPress plugins ==='
+            echo "=== WordPress plugins ==="
             wp plugin list --fields=name,status,version --allow-root
-            '=== WordPress themes ==='
+            echo "=== WordPress themes ==="
             wp theme list --fields=name,status,version --allow-root
 
       - name: Check production environment
@@ -51,9 +51,9 @@ jobs:
             set -euo pipefail
             REMOTE_DIR=~/www/production.nielslange.de/public_html
             cd "$REMOTE_DIR" || exit 1
-            '=== WordPress core ==='
+            echo "=== WordPress core ==="
             wp core version --allow-root
-            '=== WordPress plugins ==='
+            echo "=== WordPress plugins ==="
             wp plugin list --fields=name,status,version --allow-root
-            '=== WordPress themes ==='
+            echo "=== WordPress themes ==="
             wp theme list --fields=name,status,version --allow-root
