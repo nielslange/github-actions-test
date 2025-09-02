@@ -23,21 +23,27 @@ jobs:
           port: ${{ secrets.PRODUCTION_SSH_PORT }}
           timeout: 30s
           command_timeout: 60s
-          debug: true
           script: |
-            echo "=== Exploring www directory ==="
-            ls -la ~/www/
+            cd ~/www/staging.nielslange.de/public_html
+            echo "=== WordPress Installation Info ==="
+            wp core version --allow-root
             echo ""
-            echo "=== Looking for staging.nielslange.de ==="
-            find ~/www -name "*staging*" -type d 2>/dev/null
-            find ~/www -name "*nielslange*" -type d 2>/dev/null
+            echo "=== Plugin Status ==="
+            wp plugin status --allow-root
             echo ""
-            echo "=== All directories in www ==="
-            find ~/www -type d -maxdepth 3 2>/dev/null
+            echo "=== Theme Status ==="
+            wp theme status --allow-root
             echo ""
-            echo "=== Looking for wp-config.php files ==="
-            find ~/www -name "wp-config.php" -type f 2>/dev/null
+            echo "=== Available Plugin Updates ==="
+            wp plugin list --update=available --format=table --allow-root
             echo ""
-            echo "=== Checking if WP-CLI is available globally ==="
-            which wp 2>/dev/null || echo "WP-CLI not found in PATH"
-            wp --version 2>/dev/null || echo "WP-CLI not accessible"
+            echo "=== Available Theme Updates ==="
+            wp theme list --update=available --format=table --allow-root
+            echo ""
+            echo "=== Summary ==="
+            echo "WordPress Version: $(wp core version --allow-root)"
+            echo "Active Theme: $(wp theme status --allow-root | grep 'Active:' | cut -d':' -f2 | xargs)"
+            echo "Total Plugins: $(wp plugin list --format=count --allow-root)"
+            echo "Active Plugins: $(wp plugin list --status=active --format=count --allow-root)"
+            echo "Plugin Updates Available: $(wp plugin list --update=available --format=count --allow-root)"
+            echo "Theme Updates Available: $(wp theme list --update=available --format=count --allow-root)"
