@@ -6,20 +6,32 @@ on:
     - cron: "*/5 * * * *"
 
 jobs:
-  build:
+  check-versions:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Check plugin versions
+      - name: Check plugin and theme versions
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.PRODUCTION_SSH_HOSTNAME }}
           username: ${{ secrets.PRODUCTION_SSH_USERNAME }}
-          password: ${{ secrets.PRODUCTION_SSH_PASSWORD }}
+          key: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
           port: ${{ secrets.PRODUCTION_SSH_PORT }}
+          timeout: 30s
+          command_timeout: 60s
           script: |
             cd /www/staging.nielslange.de/public_html
-            wp plugin status
-            wp theme status
+            echo "=== Plugin Status ==="
+            wp plugin status --allow-root
+            echo ""
+            echo "=== Theme Status ==="
+            wp theme status --allow-root
+            echo ""
+            echo "=== Available Plugin Updates ==="
+            wp plugin list --update=available --format=table --allow-root
+            echo ""
+            echo "=== Available Theme Updates ==="
+            wp theme list --update=available --format=table --allow-root
