@@ -34,7 +34,7 @@ jobs:
             cd "$REMOTE_DIR" || exit 1
 
             # Generate JSON output directly
-            wp core version --allow-root --format=json > /tmp/staging-core.json
+            wp core version --allow-root > /tmp/staging-core.json
             wp theme list --status=active --format=json --fields=name,status,version --allow-root > /tmp/staging-themes.json
             wp plugin list --format=json --fields=name,status,version --allow-root > /tmp/staging-plugins.json
 
@@ -72,7 +72,7 @@ jobs:
             cd "$REMOTE_DIR" || exit 1
 
             # Generate JSON output directly
-            wp core version --allow-root --format=json > /tmp/production-core.json
+            wp core version --allow-root > /tmp/production-core.json
             wp theme list --status=active --format=json --fields=name,status,version --allow-root > /tmp/production-themes.json
             wp plugin list --format=json --fields=name,status,version --allow-root > /tmp/production-plugins.json
 
