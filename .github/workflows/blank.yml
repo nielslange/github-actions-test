@@ -1,19 +1,62 @@
-name: Check plugin and theme versions
+name: Compare WordPress versions between environments
 
 on:
   workflow_dispatch:
   schedule:
     - cron: "*/5 * * * *"
 
+permissions:
+  contents: write
+
 jobs:
-  check-versions:
+  compare-environments:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Check plugin and theme versions
+      # ---------- STAGING ----------
+      - name: Build STAGING reports on remote
+        id: staging_build
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.STAGING_SSH_HOSTNAME }}
+          username: ${{ secrets.STAGING_SSH_USERNAME }}
+          key: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.STAGING_SSH_PASSPHRASE }}
+          port: ${{ secrets.STAGING_SSH_PORT }}
+          timeout: 30s
+          command_timeout: 120s
+          script: |
+            set -euo pipefail
+            REMOTE_DIR=~/www/staging.nielslange.de/public_html
+            cd "$REMOTE_DIR" || exit 1
+
+            # Generate JSON output directly
+            wp core version --allow-root --format=json > /tmp/staging-core.json
+            wp theme list --status=active --format=json --fields=name,status,version --allow-root > /tmp/staging-themes.json
+            wp plugin list --format=json --fields=name,status,version --allow-root > /tmp/staging-plugins.json
+
+            # Create combined JSON
+            cat > /tmp/staging-combined.json << 'EOF'
+            {
+              "environment": "STAGING",
+              "timestamp": "$(date -u '+%Y-%m-%d %H:%M:%S UTC')",
+              "wordpress_version": "$(wp core version --allow-root)",
+              "active_theme": "$(wp theme list --status=active --field=name --allow-root)",
+              "active_theme_version": "$(wp theme list --status=active --field=version --allow-root)",
+              "plugins": $(wp plugin list --format=json --fields=name,status,version --allow-root),
+              "themes": $(wp theme list --format=json --fields=name,status,version --allow-root)
+            }
+            EOF
+
+            # Output the combined JSON
+            cat /tmp/staging-combined.json
+
+      # ---------- PRODUCTION ----------
+      - name: Build PRODUCTION reports on remote
+        id: production_build
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.PRODUCTION_SSH_HOSTNAME }}
@@ -22,28 +65,111 @@ jobs:
           passphrase: ${{ secrets.PRODUCTION_SSH_PASSPHRASE }}
           port: ${{ secrets.PRODUCTION_SSH_PORT }}
           timeout: 30s
-          command_timeout: 60s
+          command_timeout: 120s
           script: |
-            cd ~/www/staging.nielslange.de/public_html
-            echo "=== WordPress Installation Info ==="
-            wp core version --allow-root
-            echo ""
-            echo "=== Plugin Status ==="
-            wp plugin status --allow-root
-            echo ""
-            echo "=== Theme Status ==="
-            wp theme status --allow-root
-            echo ""
-            echo "=== Available Plugin Updates ==="
-            wp plugin list --update=available --format=table --allow-root
-            echo ""
-            echo "=== Available Theme Updates ==="
-            wp theme list --update=available --format=table --allow-root
-            echo ""
-            echo "=== Summary ==="
-            echo "WordPress Version: $(wp core version --allow-root)"
-            echo "Active Theme: $(wp theme status --allow-root | grep 'Active:' | cut -d':' -f2 | xargs)"
-            echo "Total Plugins: $(wp plugin list --format=count --allow-root)"
-            echo "Active Plugins: $(wp plugin list --status=active --format=count --allow-root)"
-            echo "Plugin Updates Available: $(wp plugin list --update=available --format=count --allow-root)"
-            echo "Theme Updates Available: $(wp theme list --update=available --format=count --allow-root)"
+            set -euo pipefail
+            REMOTE_DIR=~/www/production.nielslange.de/public_html
+            cd "$REMOTE_DIR" || exit 1
+
+            # Generate JSON output directly
+            wp core version --allow-root --format=json > /tmp/production-core.json
+            wp theme list --status=active --format=json --fields=name,status,version --allow-root > /tmp/production-themes.json
+            wp plugin list --format=json --fields=name,status,version --allow-root > /tmp/production-plugins.json
+
+            # Create combined JSON
+            cat > /tmp/production-combined.json << 'EOF'
+            {
+              "environment": "PRODUCTION",
+              "timestamp": "$(date -u '+%Y-%m-%d %H:%M:%S UTC')",
+              "wordpress_version": "$(wp core version --allow-root)",
+              "active_theme": "$(wp theme list --status=active --field=name --allow-root)",
+              "active_theme_version": "$(wp theme list --status=active --field=version --allow-root)",
+              "plugins": $(wp plugin list --format=json --fields=name,status,version --allow-root),
+              "themes": $(wp theme list --format=json --fields=name,status,version --allow-root)
+            }
+            EOF
+
+            # Output the combined JSON
+            cat /tmp/production-combined.json
+
+      # ---------- SAVE OUTPUTS TO FILES ----------
+      - name: Save STAGING output
+        run: |
+          mkdir -p .github/ci-artifacts
+          echo '${{ steps.staging_build.outputs.stdout }}' > .github/ci-artifacts/staging.json
+
+      - name: Save PRODUCTION output
+        run: |
+          echo '${{ steps.production_build.outputs.stdout }}' > .github/ci-artifacts/production.json
+
+      # ---------- GENERATE COMPARISON ----------
+      - name: Generate comparison report
+        run: |
+          echo "=== ENVIRONMENT COMPARISON REPORT ===" > .github/ci-artifacts/comparison.txt
+          echo "Generated: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> .github/ci-artifacts/comparison.txt
+          echo "" >> .github/ci-artifacts/comparison.txt
+
+          # Parse JSON files and compare
+          if [ -f .github/ci-artifacts/staging.json ] && [ -f .github/ci-artifacts/production.json ]; then
+            echo "✅ Both environment reports generated successfully" >> .github/ci-artifacts/comparison.txt
+            echo "" >> .github/ci-artifacts/comparison.txt
+            
+            # Extract WordPress versions
+            STAGING_WP=$(jq -r '.wordpress_version' .github/ci-artifacts/staging.json 2>/dev/null || echo "Unknown")
+            PROD_WP=$(jq -r '.wordpress_version' .github/ci-artifacts/production.json 2>/dev/null || echo "Unknown")
+            
+            echo "WordPress Versions:" >> .github/ci-artifacts/comparison.txt
+            echo "  STAGING: $STAGING_WP" >> .github/ci-artifacts/comparison.txt
+            echo "  PRODUCTION: $PROD_WP" >> .github/ci-artifacts/comparison.txt
+            echo "" >> .github/ci-artifacts/comparison.txt
+            
+            # Extract active themes
+            STAGING_THEME=$(jq -r '.active_theme' .github/ci-artifacts/staging.json 2>/dev/null || echo "Unknown")
+            PROD_THEME=$(jq -r '.active_theme' .github/ci-artifacts/production.json 2>/dev/null || echo "Unknown")
+            
+            echo "Active Themes:" >> .github/ci-artifacts/comparison.txt
+            echo "  STAGING: $STAGING_THEME" >> .github/ci-artifacts/comparison.txt
+            echo "  PRODUCTION: $PROD_THEME" >> .github/ci-artifacts/comparison.txt
+            echo "" >> .github/ci-artifacts/comparison.txt
+            
+            # Count plugins
+            STAGING_PLUGINS=$(jq '.plugins | length' .github/ci-artifacts/staging.json 2>/dev/null || echo "0")
+            PROD_PLUGINS=$(jq '.plugins | length' .github/ci-artifacts/production.json 2>/dev/null || echo "0")
+            
+            echo "Plugin Counts:" >> .github/ci-artifacts/comparison.txt
+            echo "  STAGING: $STAGING_PLUGINS plugins" >> .github/ci-artifacts/comparison.txt
+            echo "  PRODUCTION: $PROD_PLUGINS plugins" >> .github/ci-artifacts/comparison.txt
+          else
+            echo "❌ Failed to generate environment reports" >> .github/ci-artifacts/comparison.txt
+          fi
+
+      # ---------- DISPLAY SUMMARY ----------
+      - name: Display comparison summary
+        run: |
+          echo "=== COMPARISON SUMMARY ==="
+          cat .github/ci-artifacts/comparison.txt
+          echo
+          echo "=== JSON PREVIEW - STAGING ==="
+          head -c 300 .github/ci-artifacts/staging.json || echo "No staging data"
+          echo
+          echo "=== JSON PREVIEW - PRODUCTION ==="
+          head -c 300 .github/ci-artifacts/production.json || echo "No production data"
+
+      # ---------- UPLOAD ARTIFACTS ----------
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wordpress-environment-reports
+          path: .github/ci-artifacts/
+          retention-days: 30
+
+      # ---------- COMMIT CHANGES ----------
+      - name: Commit and push changes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add .github/ci-artifacts/
+          git commit -m "Update WordPress environment comparison, $(date '+%Y-%m-%d %H:%M:%S')" || exit 0
+          git push
