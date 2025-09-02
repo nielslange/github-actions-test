@@ -82,6 +82,13 @@ jobs:
         run: |
           echo '${{ steps.production_build.outputs.stdout }}' > artifacts/production.json
 
+      # ---------- CREATE TEST ARTIFACT ----------
+      - name: Create test hello world artifact
+        run: |
+          echo "Hello World! This is a test artifact." > artifacts/hello-world.txt
+          echo "Current timestamp: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> artifacts/hello-world.txt
+          echo "GitHub Actions is working!" >> artifacts/hello-world.txt
+
       # ---------- GENERATE COMPARISON ----------
       - name: Generate comparison report
         run: |
@@ -149,9 +156,30 @@ jobs:
           fi
 
       # ---------- UPLOAD ARTIFACTS ----------
-      - name: Upload artifacts
+      - name: Upload staging artifact
         uses: actions/upload-artifact@v4
         with:
-          name: wordpress-environment-reports
-          path: artifacts/
+          name: staging-wordpress-report
+          path: artifacts/staging.json
+          retention-days: 30
+
+      - name: Upload production artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-wordpress-report
+          path: artifacts/production.json
+          retention-days: 30
+
+      - name: Upload comparison report
+        uses: actions/upload-artifact@v4
+        with:
+          name: comparison-report
+          path: artifacts/comparison.txt
+          retention-days: 30
+
+      - name: Upload hello world test
+        uses: actions/upload-artifact@v4
+        with:
+          name: hello-world-test
+          path: artifacts/hello-world.txt
           retention-days: 30
