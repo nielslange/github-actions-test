@@ -16,9 +16,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ---------- STAGING ----------
-      - name: Build STAGING reports on remote
-        id: staging_build
+      - name: Check staging environment
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.STAGING_SSH_HOSTNAME }}
@@ -32,13 +30,14 @@ jobs:
             set -euo pipefail
             REMOTE_DIR=~/www/staging.nielslange.de/public_html
             cd "$REMOTE_DIR" || exit 1
+            '=== WordPress core ==='
             wp core version --allow-root
-            wp plugin list --format=json --fields=name,status,version --allow-root
-            wp theme list --format=json --fields=name,status,version --allow-root
+            '=== WordPress plugins ==='
+            wp plugin list --fields=name,status,version --allow-root
+            '=== WordPress themes ==='
+            wp theme list --fields=name,status,version --allow-root
 
-      # ---------- PRODUCTION ----------
-      - name: Build PRODUCTION reports on remote
-        id: production_build
+      - name: Check production environment
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.PRODUCTION_SSH_HOSTNAME }}
@@ -52,6 +51,9 @@ jobs:
             set -euo pipefail
             REMOTE_DIR=~/www/production.nielslange.de/public_html
             cd "$REMOTE_DIR" || exit 1
+            '=== WordPress core ==='
             wp core version --allow-root
-            wp plugin list --format=json --fields=name,status,version --allow-root
-            wp theme list --format=json --fields=name,status,version --allow-root
+            '=== WordPress plugins ==='
+            wp plugin list --fields=name,status,version --allow-root
+            '=== WordPress themes ==='
+            wp theme list --fields=name,status,version --allow-root
