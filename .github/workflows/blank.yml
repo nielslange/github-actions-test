@@ -23,16 +23,21 @@ jobs:
           port: ${{ secrets.PRODUCTION_SSH_PORT }}
           timeout: 30s
           command_timeout: 60s
+          debug: true
           script: |
-            cd /www/staging.nielslange.de/public_html
-            echo "=== Plugin Status ==="
-            wp plugin status --allow-root
+            echo "=== Current Directory ==="
+            pwd
             echo ""
-            echo "=== Theme Status ==="
-            wp theme status --allow-root
+            echo "=== Home Directory Contents ==="
+            ls -la ~/
             echo ""
-            echo "=== Available Plugin Updates ==="
-            wp plugin list --update=available --format=table --allow-root
+            echo "=== Looking for WordPress installations ==="
+            find ~ -name "wp-config.php" -type f 2>/dev/null | head -10
             echo ""
-            echo "=== Available Theme Updates ==="
-            wp theme list --update=available --format=table --allow-root
+            echo "=== Common web directories ==="
+            ls -la /var/www/ 2>/dev/null || echo "No /var/www/ directory"
+            ls -la /home/*/public_html/ 2>/dev/null || echo "No public_html directories found"
+            ls -la /home/*/htdocs/ 2>/dev/null || echo "No htdocs directories found"
+            echo ""
+            echo "=== WordPress installations with wp-cli ==="
+            wp core version --allow-root 2>/dev/null || echo "WP-CLI not found in current directory"
