@@ -33,9 +33,9 @@ jobs:
             echo "=== WordPress core ==="
             wp core version --allow-root
             echo "=== WordPress plugins ==="
-            wp plugin list --fields=name,status,version --allow-root
+            wp plugin list --fields=name,status,version,update_version --format=yaml --allow-root
             echo "=== WordPress themes ==="
-            wp theme list --fields=name,status,version --allow-root
+            wp theme list --fields=name,status,version,update_version --format=yaml --allow-root
 
       - name: Check production environment
         uses: appleboy/ssh-action@v1
@@ -54,6 +54,6 @@ jobs:
             echo "=== WordPress core ==="
             wp core version --allow-root
             echo "=== WordPress plugins ==="
-            wp plugin list --fields=name,status,version --allow-root
+            wp plugin list --fields=name,status,version,update_version --format=yaml --allow-root
             echo "=== WordPress themes ==="
-            wp theme list --fields=name,status,version --allow-root
+            wp theme list --fields=name,status,version,update_version --format=yaml --allow-root
