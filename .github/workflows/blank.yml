@@ -35,13 +35,27 @@ jobs:
 
             # Create staging report directory
             mkdir -p /tmp/staging-report
+            echo "Directory created: $(ls -la /tmp/staging-report)"
+
+            # Test directory write permissions
+            touch /tmp/staging-report/test.txt
+            echo "Test file created successfully"
 
             # Save WP CLI output to files
             wp core version --allow-root > /tmp/staging-report/core-version.txt
+            echo "Core version saved: $(cat /tmp/staging-report/core-version.txt)"
+
             wp theme list --status=active --field=name --allow-root > /tmp/staging-report/active-theme.txt
+            echo "Active theme saved: $(cat /tmp/staging-report/active-theme.txt)"
+
             wp theme list --status=active --field=version --allow-root > /tmp/staging-report/active-theme-version.txt
+            echo "Active theme version saved: $(cat /tmp/staging-report/active-theme-version.txt)"
+
             wp plugin list --format=json --fields=name,status,version --allow-root > /tmp/staging-report/plugins.json
+            echo "Plugins saved, file size: $(wc -c < /tmp/staging-report/plugins.json)"
+
             wp theme list --format=json --fields=name,status,version --allow-root > /tmp/staging-report/themes.json
+            echo "Themes saved, file size: $(wc -c < /tmp/staging-report/themes.json)"
 
             # Create combined JSON report
             cat > /tmp/staging-report/staging.json << 'EOF'
@@ -80,13 +94,27 @@ jobs:
 
             # Create production report directory
             mkdir -p /tmp/production-report
+            echo "Directory created: $(ls -la /tmp/production-report)"
+
+            # Test directory write permissions
+            touch /tmp/production-report/test.txt
+            echo "Test file created successfully"
 
             # Save WP CLI output to files
             wp core version --allow-root > /tmp/production-report/core-version.txt
+            echo "Core version saved: $(cat /tmp/production-report/core-version.txt)"
+
             wp theme list --status=active --field=name --allow-root > /tmp/production-report/active-theme.txt
+            echo "Active theme saved: $(cat /tmp/production-report/active-theme.txt)"
+
             wp theme list --status=active --field=version --allow-root > /tmp/production-report/active-theme-version.txt
+            echo "Active theme version saved: $(cat /tmp/production-report/active-theme-version.txt)"
+
             wp plugin list --format=json --fields=name,status,version --allow-root > /tmp/production-report/plugins.json
+            echo "Plugins saved, file size: $(wc -c < /tmp/production-report/plugins.json)"
+
             wp theme list --format=json --fields=name,status,version --allow-root > /tmp/production-report/themes.json
+            echo "Themes saved, file size: $(wc -c < /tmp/production-report/themes.json)"
 
             # Create combined JSON report
             cat > /tmp/production-report/production.json << 'EOF'
@@ -141,13 +169,6 @@ jobs:
           mv staging-report/* artifacts/ 2>/dev/null || true
           mv production-report/* artifacts/ 2>/dev/null || true
           ls -la artifacts/
-
-      # ---------- CREATE TEST ARTIFACT ----------
-      - name: Create test hello world artifact
-        run: |
-          echo "Hello World! This is a test artifact." > artifacts/hello-world.txt
-          echo "Current timestamp: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> artifacts/hello-world.txt
-          echo "GitHub Actions is working!" >> artifacts/hello-world.txt
 
       # ---------- GENERATE COMPARISON ----------
       - name: Generate comparison report
@@ -216,30 +237,9 @@ jobs:
           fi
 
       # ---------- UPLOAD ARTIFACTS ----------
-      - name: Upload staging artifact
+      - name: Upload all artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: staging-wordpress-report
-          path: artifacts/staging.json
-          retention-days: 30
-
-      - name: Upload production artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: production-wordpress-report
-          path: artifacts/production.json
-          retention-days: 30
-
-      - name: Upload comparison report
-        uses: actions/upload-artifact@v4
-        with:
-          name: comparison-report
-          path: artifacts/comparison.txt
-          retention-days: 30
-
-      - name: Upload hello world test
-        uses: actions/upload-artifact@v4
-        with:
-          name: hello-world-test
-          path: artifacts/hello-world.txt
+          name: wordpress-environment-reports
+          path: artifacts/
           retention-days: 30
