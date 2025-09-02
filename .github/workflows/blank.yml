@@ -17,7 +17,7 @@ jobs:
         with:
           host: ${{ secrets.PRODUCTION_SSH_HOSTNAME }}
           username: ${{ secrets.PRODUCTION_SSH_USERNAME }}
-          password: ${{ secrets.SSH_PASSWORD }}
+          password: ${{ secrets.PRODUCTION_SSH_PASSWORD }}
           port: ${{ secrets.PRODUCTION_SSH_PORT }}
           script: |
             cd /www/staging.nielslange.de/public_html
