@@ -13,19 +13,13 @@ jobs:
       - uses: actions/checkout@v2
 
       - name: Check plugin versions
-        env:
-          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
-          SSH_HOST: ${{ secrets.PRODUCTION_SSH_HOSTNAME }}
-          SSH_USER: ${{ secrets.PRODUCTION_SSH_USERNAME }}
-          SSH_PORT: ${{ secrets.PRODUCTION_SSH_PORT }}
-        run: |
-          # Install sshpass for password authentication
-          sudo apt-get update
-          sudo apt-get install -y sshpass
-
-          # Execute commands via SSH with password
-          sshpass -p "$SSH_PASSWORD" ssh -p $SSH_PORT $SSH_USER@$SSH_HOST << 'EOF'
-          cd /www/staging.nielslange.de/public_html
-          wp plugin status
-          wp theme status
-          EOF
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.PRODUCTION_SSH_HOSTNAME }}
+          username: ${{ secrets.PRODUCTION_SSH_USERNAME }}
+          password: ${{ secrets.SSH_PASSWORD }}
+          port: ${{ secrets.PRODUCTION_SSH_PORT }}
+          script: |
+            cd /www/staging.nielslange.de/public_html
+            wp plugin status
+            wp theme status
