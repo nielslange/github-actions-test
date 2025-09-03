@@ -28,7 +28,7 @@ jobs:
             cd "$WP_DIR"
             wp plugin list --fields=name,version,update_version,status --format=json --allow-root > "$WP_DIR/plugins.json"
             wp theme  list --fields=name,status,version,update_version --format=json --allow-root > "$WP_DIR/themes.json"
-            wp core   version --extra --allow-root > "$OUT/core.json"
+            wp core   version --extra --allow-root > "$WP_DIR/core.json"
 
       - name: Download staging JSON
         uses: appleboy/scp-action@v0.1.7
