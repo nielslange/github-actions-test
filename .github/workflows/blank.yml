@@ -1,475 +1,68 @@
-name: Compare WordPress versions between environments
+name: WP inventory
 
 on:
-  workflow_dispatch:
   schedule:
-    - cron: "0 */6 * * *"  # Changed from every 5 minutes to every 6 hours
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
 
 jobs:
-  compare-environments:
+  fetch:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set common timestamp
+      # Add both keys, useful when staging and production use different keys
+      - name: SSH agent, add staging key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+          ssh-passphrase:  ${{ secrets.STAGING_SSH_PASSPHRASE }}
+
+      - name: SSH agent, add production key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
+          ssh-passphrase:  ${{ secrets.PRODUCTION_SSH_PASSPHRASE }}
+
+      - name: Known hosts
         run: |
-          echo "TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")" >> $GITHUB_ENV
-          echo "RUN_ID=${{ github.run_id }}" >> $GITHUB_ENV
+          ssh-keyscan -p "${{ secrets.STAGING_SSH_PORT }}"   "${{ secrets.STAGING_SSH_HOSTNAME }}"   >> ~/.ssh/known_hosts
+          ssh-keyscan -p "${{ secrets.PRODUCTION_SSH_PORT }}" "${{ secrets.PRODUCTION_SSH_HOSTNAME }}" >> ~/.ssh/known_hosts
 
-      - name: Check staging environment
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.STAGING_SSH_HOSTNAME }}
-          username: ${{ secrets.STAGING_SSH_USERNAME }}
-          key: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
-          passphrase: ${{ secrets.STAGING_SSH_PASSPHRASE }}
-          port: ${{ secrets.STAGING_SSH_PORT }}
-          timeout: 30s
-          command_timeout: 120s
-          script: |
-            set -euo pipefail
-            
-            # Set variables
-            REMOTE_DIR=~/www/staging.nielslange.de/public_html
-            OUTPUT_FILE="/tmp/staging-versions-${{ env.RUN_ID }}.json"
-            TIMESTAMP="${{ env.TIMESTAMP }}"
-            
-            echo "=== Checking Staging Environment ==="
-            echo "Working directory: $REMOTE_DIR"
-            echo "Output file: $OUTPUT_FILE"
-            
-            # Navigate to WordPress directory
-            cd "$REMOTE_DIR" || { echo "Error: Cannot access $REMOTE_DIR"; exit 1; }
-            
-            # Verify WP-CLI is available
-            if ! command -v wp &> /dev/null; then
-                echo "Error: WP-CLI not found in PATH"
-                exit 1
-            fi
-            
-            # Verify WordPress installation
-            if ! wp core is-installed --allow-root; then
-                echo "Error: WordPress is not properly installed"
-                exit 1
-            fi
-            
-            echo "Fetching WordPress data..."
-            
-            # Get WordPress core version
-            CORE_VERSION=$(wp core version --allow-root 2>/dev/null) || {
-                echo "Error: Failed to get WordPress core version"
-                exit 1
-            }
-            
-            # Get plugins list in JSON format
-            PLUGINS_JSON=$(wp plugin list --fields=name,status,version,update_version --format=json --allow-root 2>/dev/null) || {
-                echo "Error: Failed to get plugins list"
-                exit 1
-            }
-            
-            # Get themes list in JSON format
-            THEMES_JSON=$(wp theme list --fields=name,status,version,update_version --format=json --allow-root 2>/dev/null) || {
-                echo "Error: Failed to get themes list"
-                exit 1
-            }
-            
-            # Validate JSON output
-            if ! echo "$PLUGINS_JSON" | jq empty 2>/dev/null; then
-                echo "Error: Invalid plugins JSON output"
-                exit 1
-            fi
-            
-            if ! echo "$THEMES_JSON" | jq empty 2>/dev/null; then
-                echo "Error: Invalid themes JSON output"
-                exit 1
-            fi
-            
-            # Create structured output file
-            cat > "$OUTPUT_FILE" << EOF
-            {
-              "environment": "staging",
-              "timestamp": "$TIMESTAMP",
-              "run_id": "${{ env.RUN_ID }}",
-              "wordpress_core": "$CORE_VERSION",
-              "plugins": $PLUGINS_JSON,
-              "themes": $THEMES_JSON
-            }
-            EOF
-            
-            # Verify the output file was created and is valid JSON
-            if [[ ! -f "$OUTPUT_FILE" ]] || ! jq empty "$OUTPUT_FILE" 2>/dev/null; then
-                echo "Error: Failed to create valid output file"
-                exit 1
-            fi
-            
-            # Display summary
-            echo "=== Staging Environment Check Complete ==="
-            echo "Core Version: $CORE_VERSION"
-            echo "Plugins Count: $(echo "$PLUGINS_JSON" | jq '. | length')"
-            echo "Themes Count: $(echo "$THEMES_JSON" | jq '. | length')"
-            echo "Output saved to: $OUTPUT_FILE"
-            echo "File size: $(ls -lh "$OUTPUT_FILE" | awk '{print $5}')"
-
-      - name: Check production environment
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.PRODUCTION_SSH_HOSTNAME }}
-          username: ${{ secrets.PRODUCTION_SSH_USERNAME }}
-          key: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
-          passphrase: ${{ secrets.PRODUCTION_SSH_PASSPHRASE }}
-          port: ${{ secrets.PRODUCTION_SSH_PORT }}
-          timeout: 30s
-          command_timeout: 120s
-          script: |
-            set -euo pipefail
-            
-            # Set variables
-            REMOTE_DIR=~/www/production.nielslange.de/public_html
-            OUTPUT_FILE="/tmp/production-versions-${{ env.RUN_ID }}.json"
-            TIMESTAMP="${{ env.TIMESTAMP }}"
-            
-            echo "=== Checking Production Environment ==="
-            echo "Working directory: $REMOTE_DIR"
-            echo "Output file: $OUTPUT_FILE"
-            
-            # Navigate to WordPress directory
-            cd "$REMOTE_DIR" || { echo "Error: Cannot access $REMOTE_DIR"; exit 1; }
-            
-            # Verify WP-CLI is available
-            if ! command -v wp &> /dev/null; then
-                echo "Error: WP-CLI not found in PATH"
-                exit 1
-            fi
-            
-            # Verify WordPress installation
-            if ! wp core is-installed --allow-root; then
-                echo "Error: WordPress is not properly installed"
-                exit 1
-            fi
-            
-            echo "Fetching WordPress data..."
-            
-            # Get WordPress core version
-            CORE_VERSION=$(wp core version --allow-root 2>/dev/null) || {
-                echo "Error: Failed to get WordPress core version"
-                exit 1
-            }
-            
-            # Get plugins list in JSON format
-            PLUGINS_JSON=$(wp plugin list --fields=name,status,version,update_version --format=json --allow-root 2>/dev/null) || {
-                echo "Error: Failed to get plugins list"
-                exit 1
-            }
-            
-            # Get themes list in JSON format
-            THEMES_JSON=$(wp theme list --fields=name,status,version,update_version --format=json --allow-root 2>/dev/null) || {
-                echo "Error: Failed to get themes list"
-                exit 1
-            }
-            
-            # Validate JSON output
-            if ! echo "$PLUGINS_JSON" | jq empty 2>/dev/null; then
-                echo "Error: Invalid plugins JSON output"
-                exit 1
-            fi
-            
-            if ! echo "$THEMES_JSON" | jq empty 2>/dev/null; then
-                echo "Error: Invalid themes JSON output"
-                exit 1
-            fi
-            
-            # Create structured output file
-            cat > "$OUTPUT_FILE" << EOF
-            {
-              "environment": "production",
-              "timestamp": "$TIMESTAMP",
-              "run_id": "${{ env.RUN_ID }}",
-              "wordpress_core": "$CORE_VERSION",
-              "plugins": $PLUGINS_JSON,
-              "themes": $THEMES_JSON
-            }
-            EOF
-            
-            # Verify the output file was created and is valid JSON
-            if [[ ! -f "$OUTPUT_FILE" ]] || ! jq empty "$OUTPUT_FILE" 2>/dev/null; then
-                echo "Error: Failed to create valid output file"
-                exit 1
-            fi
-            
-            # Display summary
-            echo "=== Production Environment Check Complete ==="
-            echo "Core Version: $CORE_VERSION"
-            echo "Plugins Count: $(echo "$PLUGINS_JSON" | jq '. | length')"
-            echo "Themes Count: $(echo "$THEMES_JSON" | jq '. | length')"
-            echo "Output saved to: $OUTPUT_FILE"
-            echo "File size: $(ls -lh "$OUTPUT_FILE" | awk '{print $5}')"
-
-      - name: Download staging versions file
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.STAGING_SSH_HOSTNAME }}
-          username: ${{ secrets.STAGING_SSH_USERNAME }}
-          key: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
-          passphrase: ${{ secrets.STAGING_SSH_PASSPHRASE }}
-          port: ${{ secrets.STAGING_SSH_PORT }}
-          source: "/tmp/staging-versions-${{ env.RUN_ID }}.json"
-          target: "./staging-versions.json"
-
-      - name: Download production versions file
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.PRODUCTION_SSH_HOSTNAME }}
-          username: ${{ secrets.PRODUCTION_SSH_USERNAME }}
-          key: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
-          passphrase: ${{ secrets.PRODUCTION_SSH_PASSPHRASE }}
-          port: ${{ secrets.PRODUCTION_SSH_PORT }}
-          source: "/tmp/production-versions-${{ env.RUN_ID }}.json"
-          target: "./production-versions.json"
-
-      - name: Verify downloaded files
+      - name: Fetch staging versions
+        env:
+          SSH_HOST:  ${{ secrets.STAGING_SSH_HOSTNAME }}
+          SSH_USER:  ${{ secrets.STAGING_SSH_USERNAME }}
+          SSH_PORT:  ${{ secrets.STAGING_SSH_PORT }}
+          WP_PATH:   ${{ secrets.STAGING_WP_PATH }}          # e.g. /var/www/html or /home/user/public_html
+          WP_BIN:    ${{ secrets.STAGING_WP_BIN || 'wp' }}   # absolute path if needed, else "wp"
         run: |
-          echo "=== Verifying Downloaded Files ==="
-          
-          if [[ ! -f "staging-versions.json" ]]; then
-            echo "Error: staging-versions.json not found"
-            exit 1
-          fi
-          
-          if [[ ! -f "production-versions.json" ]]; then
-            echo "Error: production-versions.json not found"
-            exit 1
-          fi
-          
-          # Verify files are valid JSON
-          if ! jq empty staging-versions.json 2>/dev/null; then
-            echo "Error: staging-versions.json is not valid JSON"
-            echo "Content:"
-            cat staging-versions.json
-            exit 1
-          fi
-          
-          if ! jq empty production-versions.json 2>/dev/null; then
-            echo "Error: production-versions.json is not valid JSON"
-            echo "Content:"
-            cat production-versions.json
-            exit 1
-          fi
-          
-          echo "✅ Both files downloaded successfully and are valid JSON"
-          echo "Staging file size: $(ls -lh staging-versions.json | awk '{print $5}')"
-          echo "Production file size: $(ls -lh production-versions.json | awk '{print $5}')"
+          set -euo pipefail
+          mkdir -p inventory/staging
+          ssh -T -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "cd '$WP_PATH' && $WP_BIN plugin list --fields=name,version,update_version,status --format=json" > inventory/staging/plugins.json
+          ssh -T -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "cd '$WP_PATH' && $WP_BIN theme  list --fields=name,status,version,update_version --format=json" > inventory/staging/themes.json
+          ssh -T -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "cd '$WP_PATH' && $WP_BIN core   version --extra --format=json" > inventory/staging/core.json
 
-      - name: Compare versions
+      - name: Fetch production versions
+        env:
+          SSH_HOST:  ${{ secrets.PRODUCTION_SSH_HOSTNAME }}
+          SSH_USER:  ${{ secrets.PRODUCTION_SSH_USERNAME }}
+          SSH_PORT:  ${{ secrets.PRODUCTION_SSH_PORT }}
+          WP_PATH:   ${{ secrets.PRODUCTION_WP_PATH }}
+          WP_BIN:    ${{ secrets.PRODUCTION_WP_BIN || 'wp' }}
         run: |
-          echo "=== Version Comparison Report ==="
-          echo "Generated: $(date -u)"
-          echo "GitHub Run ID: ${{ env.RUN_ID }}"
-          echo ""
+          set -euo pipefail
+          mkdir -p inventory/production
+          ssh -T -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "cd '$WP_PATH' && $WP_BIN plugin list --fields=name,version,update_version,status --format=json" > inventory/production/plugins.json
+          ssh -T -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "cd '$WP_PATH' && $WP_BIN theme  list --fields=name,status,version,update_version --format=json" > inventory/production/themes.json
+          ssh -T -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "cd '$WP_PATH' && $WP_BIN core   version --extra --format=json" > inventory/production/core.json
 
-          # Load the JSON files
-          STAGING=$(cat staging-versions.json)
-          PRODUCTION=$(cat production-versions.json)
-
-          # Extract core versions
-          STAGING_CORE=$(echo "$STAGING" | jq -r '.wordpress_core')
-          PRODUCTION_CORE=$(echo "$PRODUCTION" | jq -r '.wordpress_core')
-
-          echo "WordPress Core:"
-          echo "  Staging:    $STAGING_CORE"
-          echo "  Production: $PRODUCTION_CORE"
-
-          if [ "$STAGING_CORE" = "$PRODUCTION_CORE" ]; then
-            echo "  ✅ Core versions match"
-            CORE_MATCH=true
-          else
-            echo "  ❌ Core versions differ"
-            CORE_MATCH=false
-          fi
-
-          echo ""
-          echo "Plugin Comparison:"
-
-          # Compare plugins
-          echo "$STAGING" | jq -r '.plugins[] | "\(.name): \(.version)"' | sort > staging-plugins.txt
-          echo "$PRODUCTION" | jq -r '.plugins[] | "\(.name): \(.version)"' | sort > production-plugins.txt
-
-          if diff staging-plugins.txt production-plugins.txt > /dev/null; then
-            echo "  ✅ Plugin versions match"
-            PLUGINS_MATCH=true
-          else
-            echo "  ❌ Plugin versions differ:"
-            echo "    Differences:"
-            diff -u staging-plugins.txt production-plugins.txt | grep '^[+-]' | grep -v '^[+-][+-][+-]' | sed 's/^/      /' || true
-            PLUGINS_MATCH=false
-          fi
-
-          echo ""
-          echo "Theme Comparison:"
-
-          # Compare themes
-          echo "$STAGING" | jq -r '.themes[] | "\(.name): \(.version)"' | sort > staging-themes.txt
-          echo "$PRODUCTION" | jq -r '.themes[] | "\(.name): \(.version)"' | sort > production-themes.txt
-
-          if diff staging-themes.txt production-themes.txt > /dev/null; then
-            echo "  ✅ Theme versions match"
-            THEMES_MATCH=true
-          else
-            echo "  ❌ Theme versions differ:"
-            echo "    Differences:"
-            diff -u staging-themes.txt production-themes.txt | grep '^[+-]' | grep -v '^[+-][+-][+-]' | sed 's/^/      /' || true
-            THEMES_MATCH=false
-          fi
-
-          # Set environment variables for the summary
-          echo "CORE_MATCH=$CORE_MATCH" >> $GITHUB_ENV
-          echo "PLUGINS_MATCH=$PLUGINS_MATCH" >> $GITHUB_ENV
-          echo "THEMES_MATCH=$THEMES_MATCH" >> $GITHUB_ENV
-
-          # Create enhanced summary report
-          cat > version-comparison-report.txt << EOF
-          WordPress Version Comparison Report
-          ===================================
-          Generated: $(date -u)
-          GitHub Run ID: ${{ env.RUN_ID }}
-          Workflow: ${{ github.workflow }}
-
-          WordPress Core:
-          - Staging:    $STAGING_CORE
-          - Production: $PRODUCTION_CORE
-          - Status:     $([ "$CORE_MATCH" = "true" ] && echo "✅ Match" || echo "❌ Different")
-
-          Plugins:
-          - Staging Count:    $(echo "$STAGING" | jq '.plugins | length')
-          - Production Count: $(echo "$PRODUCTION" | jq '.plugins | length')
-          - Status:           $([ "$PLUGINS_MATCH" = "true" ] && echo "✅ Match" || echo "❌ Different")
-
-          Themes:
-          - Staging Count:    $(echo "$STAGING" | jq '.themes | length')
-          - Production Count: $(echo "$PRODUCTION" | jq '.themes | length')
-          - Status:           $([ "$THEMES_MATCH" = "true" ] && echo "✅ Match" || echo "❌ Different")
-
-          Detailed plugin differences:
-          $(diff -u staging-plugins.txt production-plugins.txt 2>/dev/null || echo "Files are identical")
-
-          Detailed theme differences:
-          $(diff -u staging-themes.txt production-themes.txt 2>/dev/null || echo "Files are identical")
-          EOF
-
-      - name: Commit and push version files to repository
+      - name: Commit changes
         run: |
-          # Configure git
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          
-          # Create versions directory if it doesn't exist
-          mkdir -p versions
-          
-          # Copy files to versions directory with timestamp
-          cp staging-versions.json "versions/staging-$(date -u +%Y%m%d-%H%M%S).json"
-          cp production-versions.json "versions/production-$(date -u +%Y%m%d-%H%M%S).json"
-          cp version-comparison-report.txt "versions/comparison-$(date -u +%Y%m%d-%H%M%S).txt"
-          
-          # Also keep current versions
-          cp staging-versions.json "versions/staging-latest.json"
-          cp production-versions.json "versions/production-latest.json"
-          cp version-comparison-report.txt "versions/comparison-latest.txt"
-          
-          # Add files to git
-          git add versions/
-          
-          # Only commit if there are changes
-          if ! git diff --cached --quiet; then
-            git commit -m "Update WordPress versions - $(date -u +%Y-%m-%d\ %H:%M:%S\ UTC)" || true
-            git push || {
-              echo "Failed to push changes - this might be expected if no changes were made"
-            }
-          else
-            echo "No changes to commit"
-          fi
-
-      - name: Upload version files as artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: wordpress-version-files-${{ env.RUN_ID }}
-          path: |
-            staging-versions.json
-            production-versions.json
-            version-comparison-report.txt
-            staging-plugins.txt
-            production-plugins.txt
-            staging-themes.txt
-            production-themes.txt
-          retention-days: 30
-
-      - name: Clean up remote files
-        if: always()
-        continue-on-error: true
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.STAGING_SSH_HOSTNAME }}
-          username: ${{ secrets.STAGING_SSH_USERNAME }}
-          key: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
-          passphrase: ${{ secrets.STAGING_SSH_PASSPHRASE }}
-          port: ${{ secrets.STAGING_SSH_PORT }}
-          script: |
-            rm -f "/tmp/staging-versions-${{ env.RUN_ID }}.json"
-
-      - name: Clean up remote files (production)
-        if: always()
-        continue-on-error: true
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.PRODUCTION_SSH_HOSTNAME }}
-          username: ${{ secrets.PRODUCTION_SSH_USERNAME }}
-          key: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
-          passphrase: ${{ secrets.PRODUCTION_SSH_PASSPHRASE }}
-          port: ${{ secrets.PRODUCTION_SSH_PORT }}
-          script: |
-            rm -f "/tmp/production-versions-${{ env.RUN_ID }}.json"
-
-      - name: Display final summary
-        run: |
-          echo "=== Final Summary ==="
-          cat version-comparison-report.txt
-
-          # Check if there are any differences
-          if [[ "${{ env.CORE_MATCH }}" != "true" ]] || \
-             [[ "${{ env.PLUGINS_MATCH }}" != "true" ]] || \
-             [[ "${{ env.THEMES_MATCH }}" != "true" ]]; then
-            echo ""
-            echo "⚠️  Version differences detected between environments!"
-            echo "Review the artifacts and repository files for detailed comparison."
-            
-            # Create GitHub Actions summary
-            {
-              echo "## WordPress Version Comparison Results"
-              echo ""
-              echo "| Component | Status |"
-              echo "|-----------|--------|"
-              echo "| WordPress Core | $([[ '${{ env.CORE_MATCH }}' == 'true' ]] && echo '✅ Match' || echo '❌ Different') |"
-              echo "| Plugins | $([[ '${{ env.PLUGINS_MATCH }}' == 'true' ]] && echo '✅ Match' || echo '❌ Different') |"
-              echo "| Themes | $([[ '${{ env.THEMES_MATCH }}' == 'true' ]] && echo '✅ Match' || echo '❌ Different') |"
-              echo ""
-              echo "Check the artifacts for detailed comparison files."
-            } >> $GITHUB_STEP_SUMMARY
-            
-            # Uncomment the next line if you want the workflow to fail when versions differ
-            # exit 1
-          else
-            echo ""
-            echo "✅ All versions match between environments!"
-            
-            {
-              echo "## WordPress Version Comparison Results"
-              echo ""
-              echo "✅ **All versions match between staging and production environments!**"
-              echo ""
-              echo "| Component | Status |"
-              echo "|-----------|--------|"
-              echo "| WordPress Core | ✅ Match |"
-              echo "| Plugins | ✅ Match |"
-              echo "| Themes | ✅ Match |"
-            } >> $GITHUB_STEP_SUMMARY
-          fi
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add inventory/
+          git diff --cached --quiet || git commit -m "chore, inventory, update"
+          git push
