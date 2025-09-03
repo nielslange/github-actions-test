@@ -1,62 +1,89 @@
-name: WP inventory
+name: Compare WordPress versions between environments
 
 on:
+  workflow_dispatch:
   schedule:
     - cron: "*/15 * * * *"
-  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
-  fetch:
+  compare-environments:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Add both keys, useful when staging and production use different keys
-      - name: SSH agent, add staging key
-        uses: webfactory/ssh-agent@v0.9.0
+      # Fetch staging versions
+      - name: Generate staging JSON on remote
+        uses: appleboy/ssh-action@v1
         with:
-          ssh-private-key: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
-          ssh-passphrase:  ${{ secrets.STAGING_SSH_PASSPHRASE }}
+          host: ${{ secrets.STAGING_SSH_HOSTNAME }}
+          username: ${{ secrets.STAGING_SSH_USERNAME }}
+          key: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.STAGING_SSH_PASSPHRASE }}
+          port: ${{ secrets.STAGING_SSH_PORT }}
+          timeout: 30s
+          command_timeout: 120s
+          script: |
+            set -euo pipefail
+            WP_DIR=~/www/staging.nielslange.de/public_html
+            OUT=/tmp/wp-inventory-staging
+            mkdir -p "$OUT"
+            cd "$WP_DIR"
+            wp plugin list --fields=name,version,update_version,status --format=json --allow-root > "$OUT/plugins.json"
+            wp theme  list --fields=name,status,version,update_version --format=json --allow-root > "$OUT/themes.json"
+            wp core   version --extra --format=json --allow-root > "$OUT/core.json"
 
-      - name: SSH agent, add production key
-        uses: webfactory/ssh-agent@v0.9.0
+      - name: Fetch staging JSON to repo
+        uses: appleboy/scp-action@v0.1.7
         with:
-          ssh-private-key: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
-          ssh-passphrase:  ${{ secrets.PRODUCTION_SSH_PASSPHRASE }}
+          host: ${{ secrets.STAGING_SSH_HOSTNAME }}
+          username: ${{ secrets.STAGING_SSH_USERNAME }}
+          key: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.STAGING_SSH_PASSPHRASE }}
+          port: ${{ secrets.STAGING_SSH_PORT }}
+          source: "/tmp/wp-inventory-staging/*.json"
+          target: "inventory/staging"
+          overwrite: true
+          strip_components: 0
+          direction: download
 
-      - name: Known hosts
-        run: |
-          ssh-keyscan -p "${{ secrets.STAGING_SSH_PORT }}"   "${{ secrets.STAGING_SSH_HOSTNAME }}"   >> ~/.ssh/known_hosts
-          ssh-keyscan -p "${{ secrets.PRODUCTION_SSH_PORT }}" "${{ secrets.PRODUCTION_SSH_HOSTNAME }}" >> ~/.ssh/known_hosts
+      # Fetch production versions
+      - name: Generate production JSON on remote
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.PRODUCTION_SSH_HOSTNAME }}
+          username: ${{ secrets.PRODUCTION_SSH_USERNAME }}
+          key: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.PRODUCTION_SSH_PASSPHRASE }}
+          port: ${{ secrets.PRODUCTION_SSH_PORT }}
+          timeout: 30s
+          command_timeout: 120s
+          script: |
+            set -euo pipefail
+            WP_DIR=~/www/production.nielslange.de/public_html
+            OUT=/tmp/wp-inventory-production
+            mkdir -p "$OUT"
+            cd "$WP_DIR"
+            wp plugin list --fields=name,version,update_version,status --format=json --allow-root > "$OUT/plugins.json"
+            wp theme  list --fields=name,status,version,update_version --format=json --allow-root > "$OUT/themes.json"
+            wp core   version --extra --format=json --allow-root > "$OUT/core.json"
 
-      - name: Fetch staging versions
-        env:
-          SSH_HOST:  ${{ secrets.STAGING_SSH_HOSTNAME }}
-          SSH_USER:  ${{ secrets.STAGING_SSH_USERNAME }}
-          SSH_PORT:  ${{ secrets.STAGING_SSH_PORT }}
-          WP_PATH:   ${{ secrets.STAGING_WP_PATH }}          # e.g. /var/www/html or /home/user/public_html
-          WP_BIN:    ${{ secrets.STAGING_WP_BIN || 'wp' }}   # absolute path if needed, else "wp"
-        run: |
-          set -euo pipefail
-          mkdir -p inventory/staging
-          ssh -T -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "cd '$WP_PATH' && $WP_BIN plugin list --fields=name,version,update_version,status --format=json" > inventory/staging/plugins.json
-          ssh -T -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "cd '$WP_PATH' && $WP_BIN theme  list --fields=name,status,version,update_version --format=json" > inventory/staging/themes.json
-          ssh -T -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "cd '$WP_PATH' && $WP_BIN core   version --extra --format=json" > inventory/staging/core.json
-
-      - name: Fetch production versions
-        env:
-          SSH_HOST:  ${{ secrets.PRODUCTION_SSH_HOSTNAME }}
-          SSH_USER:  ${{ secrets.PRODUCTION_SSH_USERNAME }}
-          SSH_PORT:  ${{ secrets.PRODUCTION_SSH_PORT }}
-          WP_PATH:   ${{ secrets.PRODUCTION_WP_PATH }}
-          WP_BIN:    ${{ secrets.PRODUCTION_WP_BIN || 'wp' }}
-        run: |
-          set -euo pipefail
-          mkdir -p inventory/production
-          ssh -T -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "cd '$WP_PATH' && $WP_BIN plugin list --fields=name,version,update_version,status --format=json" > inventory/production/plugins.json
-          ssh -T -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "cd '$WP_PATH' && $WP_BIN theme  list --fields=name,status,version,update_version --format=json" > inventory/production/themes.json
-          ssh -T -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "cd '$WP_PATH' && $WP_BIN core   version --extra --format=json" > inventory/production/core.json
+      - name: Fetch production JSON to repo
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.PRODUCTION_SSH_HOSTNAME }}
+          username: ${{ secrets.PRODUCTION_SSH_USERNAME }}
+          key: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.PRODUCTION_SSH_PASSPHRASE }}
+          port: ${{ secrets.PRODUCTION_SSH_PORT }}
+          source: "/tmp/wp-inventory-production/*.json"
+          target: "inventory/production"
+          overwrite: true
+          strip_components: 0
+          direction: download
 
       - name: Commit changes
         run: |
