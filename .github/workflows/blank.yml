@@ -3,7 +3,7 @@ name: Compare WordPress versions between environments
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "0 */6 * * *"  # Changed from every 5 minutes to every 6 hours
 
 jobs:
   compare-environments:
@@ -12,6 +12,11 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Set common timestamp
+        run: |
+          echo "TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")" >> $GITHUB_ENV
+          echo "RUN_ID=${{ github.run_id }}" >> $GITHUB_ENV
 
       - name: Check staging environment
         uses: appleboy/ssh-action@v1
@@ -25,38 +30,87 @@ jobs:
           command_timeout: 120s
           script: |
             set -euo pipefail
+            
+            # Set variables
             REMOTE_DIR=~/www/staging.nielslange.de/public_html
-            cd "$REMOTE_DIR" || exit 1
-
-            # Create timestamp for this check
-            TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
+            OUTPUT_FILE="/tmp/staging-versions-${{ env.RUN_ID }}.json"
+            TIMESTAMP="${{ env.TIMESTAMP }}"
+            
+            echo "=== Checking Staging Environment ==="
+            echo "Working directory: $REMOTE_DIR"
+            echo "Output file: $OUTPUT_FILE"
+            
+            # Navigate to WordPress directory
+            cd "$REMOTE_DIR" || { echo "Error: Cannot access $REMOTE_DIR"; exit 1; }
+            
+            # Verify WP-CLI is available
+            if ! command -v wp &> /dev/null; then
+                echo "Error: WP-CLI not found in PATH"
+                exit 1
+            fi
+            
+            # Verify WordPress installation
+            if ! wp core is-installed --allow-root; then
+                echo "Error: WordPress is not properly installed"
+                exit 1
+            fi
+            
+            echo "Fetching WordPress data..."
+            
             # Get WordPress core version
-            CORE_VERSION=$(wp core version --allow-root)
-
+            CORE_VERSION=$(wp core version --allow-root 2>/dev/null) || {
+                echo "Error: Failed to get WordPress core version"
+                exit 1
+            }
+            
             # Get plugins list in JSON format
-            PLUGINS_JSON=$(wp plugin list --fields=name,status,version,update_version --format=json --allow-root)
-
+            PLUGINS_JSON=$(wp plugin list --fields=name,status,version,update_version --format=json --allow-root 2>/dev/null) || {
+                echo "Error: Failed to get plugins list"
+                exit 1
+            }
+            
             # Get themes list in JSON format
-            THEMES_JSON=$(wp theme list --fields=name,status,version,update_version --format=json --allow-root)
-
+            THEMES_JSON=$(wp theme list --fields=name,status,version,update_version --format=json --allow-root 2>/dev/null) || {
+                echo "Error: Failed to get themes list"
+                exit 1
+            }
+            
+            # Validate JSON output
+            if ! echo "$PLUGINS_JSON" | jq empty 2>/dev/null; then
+                echo "Error: Invalid plugins JSON output"
+                exit 1
+            fi
+            
+            if ! echo "$THEMES_JSON" | jq empty 2>/dev/null; then
+                echo "Error: Invalid themes JSON output"
+                exit 1
+            fi
+            
             # Create structured output file
-            cat > ~/staging-versions.json << EOF
+            cat > "$OUTPUT_FILE" << EOF
             {
               "environment": "staging",
               "timestamp": "$TIMESTAMP",
+              "run_id": "${{ env.RUN_ID }}",
               "wordpress_core": "$CORE_VERSION",
               "plugins": $PLUGINS_JSON,
               "themes": $THEMES_JSON
             }
             EOF
-
+            
+            # Verify the output file was created and is valid JSON
+            if [[ ! -f "$OUTPUT_FILE" ]] || ! jq empty "$OUTPUT_FILE" 2>/dev/null; then
+                echo "Error: Failed to create valid output file"
+                exit 1
+            fi
+            
             # Display summary
             echo "=== Staging Environment Check Complete ==="
             echo "Core Version: $CORE_VERSION"
             echo "Plugins Count: $(echo "$PLUGINS_JSON" | jq '. | length')"
             echo "Themes Count: $(echo "$THEMES_JSON" | jq '. | length')"
-            echo "Output saved to: ~/staging-versions.json"
+            echo "Output saved to: $OUTPUT_FILE"
+            echo "File size: $(ls -lh "$OUTPUT_FILE" | awk '{print $5}')"
 
       - name: Check production environment
         uses: appleboy/ssh-action@v1
@@ -70,38 +124,87 @@ jobs:
           command_timeout: 120s
           script: |
             set -euo pipefail
+            
+            # Set variables
             REMOTE_DIR=~/www/production.nielslange.de/public_html
-            cd "$REMOTE_DIR" || exit 1
-
-            # Create timestamp for this check
-            TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
+            OUTPUT_FILE="/tmp/production-versions-${{ env.RUN_ID }}.json"
+            TIMESTAMP="${{ env.TIMESTAMP }}"
+            
+            echo "=== Checking Production Environment ==="
+            echo "Working directory: $REMOTE_DIR"
+            echo "Output file: $OUTPUT_FILE"
+            
+            # Navigate to WordPress directory
+            cd "$REMOTE_DIR" || { echo "Error: Cannot access $REMOTE_DIR"; exit 1; }
+            
+            # Verify WP-CLI is available
+            if ! command -v wp &> /dev/null; then
+                echo "Error: WP-CLI not found in PATH"
+                exit 1
+            fi
+            
+            # Verify WordPress installation
+            if ! wp core is-installed --allow-root; then
+                echo "Error: WordPress is not properly installed"
+                exit 1
+            fi
+            
+            echo "Fetching WordPress data..."
+            
             # Get WordPress core version
-            CORE_VERSION=$(wp core version --allow-root)
-
+            CORE_VERSION=$(wp core version --allow-root 2>/dev/null) || {
+                echo "Error: Failed to get WordPress core version"
+                exit 1
+            }
+            
             # Get plugins list in JSON format
-            PLUGINS_JSON=$(wp plugin list --fields=name,status,version,update_version --format=json --allow-root)
-
+            PLUGINS_JSON=$(wp plugin list --fields=name,status,version,update_version --format=json --allow-root 2>/dev/null) || {
+                echo "Error: Failed to get plugins list"
+                exit 1
+            }
+            
             # Get themes list in JSON format
-            THEMES_JSON=$(wp theme list --fields=name,status,version,update_version --format=json --allow-root)
-
+            THEMES_JSON=$(wp theme list --fields=name,status,version,update_version --format=json --allow-root 2>/dev/null) || {
+                echo "Error: Failed to get themes list"
+                exit 1
+            }
+            
+            # Validate JSON output
+            if ! echo "$PLUGINS_JSON" | jq empty 2>/dev/null; then
+                echo "Error: Invalid plugins JSON output"
+                exit 1
+            fi
+            
+            if ! echo "$THEMES_JSON" | jq empty 2>/dev/null; then
+                echo "Error: Invalid themes JSON output"
+                exit 1
+            fi
+            
             # Create structured output file
-            cat > ~/production-versions.json << EOF
+            cat > "$OUTPUT_FILE" << EOF
             {
               "environment": "production",
               "timestamp": "$TIMESTAMP",
+              "run_id": "${{ env.RUN_ID }}",
               "wordpress_core": "$CORE_VERSION",
               "plugins": $PLUGINS_JSON,
               "themes": $THEMES_JSON
             }
             EOF
-
+            
+            # Verify the output file was created and is valid JSON
+            if [[ ! -f "$OUTPUT_FILE" ]] || ! jq empty "$OUTPUT_FILE" 2>/dev/null; then
+                echo "Error: Failed to create valid output file"
+                exit 1
+            fi
+            
             # Display summary
             echo "=== Production Environment Check Complete ==="
             echo "Core Version: $CORE_VERSION"
             echo "Plugins Count: $(echo "$PLUGINS_JSON" | jq '. | length')"
             echo "Themes Count: $(echo "$THEMES_JSON" | jq '. | length')"
-            echo "Output saved to: ~/production-versions.json"
+            echo "Output saved to: $OUTPUT_FILE"
+            echo "File size: $(ls -lh "$OUTPUT_FILE" | awk '{print $5}')"
 
       - name: Download staging versions file
         uses: appleboy/scp-action@v0.1.7
@@ -111,8 +214,8 @@ jobs:
           key: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
           passphrase: ${{ secrets.STAGING_SSH_PASSPHRASE }}
           port: ${{ secrets.STAGING_SSH_PORT }}
-          source: "~/staging-versions.json"
-          target: "./"
+          source: "/tmp/staging-versions-${{ env.RUN_ID }}.json"
+          target: "./staging-versions.json"
 
       - name: Download production versions file
         uses: appleboy/scp-action@v0.1.7
@@ -122,13 +225,47 @@ jobs:
           key: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
           passphrase: ${{ secrets.PRODUCTION_SSH_PASSPHRASE }}
           port: ${{ secrets.PRODUCTION_SSH_PORT }}
-          source: "~/production-versions.json"
-          target: "./"
+          source: "/tmp/production-versions-${{ env.RUN_ID }}.json"
+          target: "./production-versions.json"
+
+      - name: Verify downloaded files
+        run: |
+          echo "=== Verifying Downloaded Files ==="
+          
+          if [[ ! -f "staging-versions.json" ]]; then
+            echo "Error: staging-versions.json not found"
+            exit 1
+          fi
+          
+          if [[ ! -f "production-versions.json" ]]; then
+            echo "Error: production-versions.json not found"
+            exit 1
+          fi
+          
+          # Verify files are valid JSON
+          if ! jq empty staging-versions.json 2>/dev/null; then
+            echo "Error: staging-versions.json is not valid JSON"
+            echo "Content:"
+            cat staging-versions.json
+            exit 1
+          fi
+          
+          if ! jq empty production-versions.json 2>/dev/null; then
+            echo "Error: production-versions.json is not valid JSON"
+            echo "Content:"
+            cat production-versions.json
+            exit 1
+          fi
+          
+          echo "✅ Both files downloaded successfully and are valid JSON"
+          echo "Staging file size: $(ls -lh staging-versions.json | awk '{print $5}')"
+          echo "Production file size: $(ls -lh production-versions.json | awk '{print $5}')"
 
       - name: Compare versions
         run: |
           echo "=== Version Comparison Report ==="
           echo "Generated: $(date -u)"
+          echo "GitHub Run ID: ${{ env.RUN_ID }}"
           echo ""
 
           # Load the JSON files
@@ -145,8 +282,10 @@ jobs:
 
           if [ "$STAGING_CORE" = "$PRODUCTION_CORE" ]; then
             echo "  ✅ Core versions match"
+            CORE_MATCH=true
           else
             echo "  ❌ Core versions differ"
+            CORE_MATCH=false
           fi
 
           echo ""
@@ -158,12 +297,12 @@ jobs:
 
           if diff staging-plugins.txt production-plugins.txt > /dev/null; then
             echo "  ✅ Plugin versions match"
+            PLUGINS_MATCH=true
           else
             echo "  ❌ Plugin versions differ:"
-            echo "    Staging plugins:"
-            cat staging-plugins.txt | sed 's/^/      /'
-            echo "    Production plugins:"
-            cat production-plugins.txt | sed 's/^/      /'
+            echo "    Differences:"
+            diff -u staging-plugins.txt production-plugins.txt | grep '^[+-]' | grep -v '^[+-][+-][+-]' | sed 's/^/      /' || true
+            PLUGINS_MATCH=false
           fi
 
           echo ""
@@ -175,46 +314,85 @@ jobs:
 
           if diff staging-themes.txt production-themes.txt > /dev/null; then
             echo "  ✅ Theme versions match"
+            THEMES_MATCH=true
           else
             echo "  ❌ Theme versions differ:"
-            echo "    Staging themes:"
-            cat staging-themes.txt | sed 's/^/      /'
-            echo "    Production themes:"
-            cat production-themes.txt | sed 's/^/      /'
+            echo "    Differences:"
+            diff -u staging-themes.txt production-themes.txt | grep '^[+-]' | grep -v '^[+-][+-][+-]' | sed 's/^/      /' || true
+            THEMES_MATCH=false
           fi
 
-          # Create summary report
+          # Set environment variables for the summary
+          echo "CORE_MATCH=$CORE_MATCH" >> $GITHUB_ENV
+          echo "PLUGINS_MATCH=$PLUGINS_MATCH" >> $GITHUB_ENV
+          echo "THEMES_MATCH=$THEMES_MATCH" >> $GITHUB_ENV
+
+          # Create enhanced summary report
           cat > version-comparison-report.txt << EOF
           WordPress Version Comparison Report
           ===================================
           Generated: $(date -u)
+          GitHub Run ID: ${{ env.RUN_ID }}
+          Workflow: ${{ github.workflow }}
 
           WordPress Core:
           - Staging:    $STAGING_CORE
           - Production: $PRODUCTION_CORE
-          - Status:     $([ "$STAGING_CORE" = "$PRODUCTION_CORE" ] && echo "✅ Match" || echo "❌ Different")
+          - Status:     $([ "$CORE_MATCH" = "true" ] && echo "✅ Match" || echo "❌ Different")
 
           Plugins:
           - Staging Count:    $(echo "$STAGING" | jq '.plugins | length')
           - Production Count: $(echo "$PRODUCTION" | jq '.plugins | length')
-          - Status:           $([ "$(cat staging-plugins.txt)" = "$(cat production-plugins.txt)" ] && echo "✅ Match" || echo "❌ Different")
+          - Status:           $([ "$PLUGINS_MATCH" = "true" ] && echo "✅ Match" || echo "❌ Different")
 
           Themes:
           - Staging Count:    $(echo "$STAGING" | jq '.themes | length')
           - Production Count: $(echo "$PRODUCTION" | jq '.themes | length')
-          - Status:           $([ "$(cat staging-themes.txt)" = "$(cat production-themes.txt)" ] && echo "✅ Match" || echo "❌ Different")
+          - Status:           $([ "$THEMES_MATCH" = "true" ] && echo "✅ Match" || echo "❌ Different")
 
           Detailed plugin differences:
-          $(diff staging-plugins.txt production-plugins.txt 2>/dev/null || echo "No differences found")
+          $(diff -u staging-plugins.txt production-plugins.txt 2>/dev/null || echo "Files are identical")
 
           Detailed theme differences:
-          $(diff staging-themes.txt production-themes.txt 2>/dev/null || echo "No differences found")
+          $(diff -u staging-themes.txt production-themes.txt 2>/dev/null || echo "Files are identical")
           EOF
+
+      - name: Commit and push version files to repository
+        run: |
+          # Configure git
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          
+          # Create versions directory if it doesn't exist
+          mkdir -p versions
+          
+          # Copy files to versions directory with timestamp
+          cp staging-versions.json "versions/staging-$(date -u +%Y%m%d-%H%M%S).json"
+          cp production-versions.json "versions/production-$(date -u +%Y%m%d-%H%M%S).json"
+          cp version-comparison-report.txt "versions/comparison-$(date -u +%Y%m%d-%H%M%S).txt"
+          
+          # Also keep current versions
+          cp staging-versions.json "versions/staging-latest.json"
+          cp production-versions.json "versions/production-latest.json"
+          cp version-comparison-report.txt "versions/comparison-latest.txt"
+          
+          # Add files to git
+          git add versions/
+          
+          # Only commit if there are changes
+          if ! git diff --cached --quiet; then
+            git commit -m "Update WordPress versions - $(date -u +%Y-%m-%d\ %H:%M:%S\ UTC)" || true
+            git push || {
+              echo "Failed to push changes - this might be expected if no changes were made"
+            }
+          else
+            echo "No changes to commit"
+          fi
 
       - name: Upload version files as artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: wordpress-version-files
+          name: wordpress-version-files-${{ env.RUN_ID }}
           path: |
             staging-versions.json
             production-versions.json
@@ -225,21 +403,73 @@ jobs:
             production-themes.txt
           retention-days: 30
 
-      - name: Display comparison summary
+      - name: Clean up remote files
+        if: always()
+        continue-on-error: true
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.STAGING_SSH_HOSTNAME }}
+          username: ${{ secrets.STAGING_SSH_USERNAME }}
+          key: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.STAGING_SSH_PASSPHRASE }}
+          port: ${{ secrets.STAGING_SSH_PORT }}
+          script: |
+            rm -f "/tmp/staging-versions-${{ env.RUN_ID }}.json"
+
+      - name: Clean up remote files (production)
+        if: always()
+        continue-on-error: true
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.PRODUCTION_SSH_HOSTNAME }}
+          username: ${{ secrets.PRODUCTION_SSH_USERNAME }}
+          key: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.PRODUCTION_SSH_PASSPHRASE }}
+          port: ${{ secrets.PRODUCTION_SSH_PORT }}
+          script: |
+            rm -f "/tmp/production-versions-${{ env.RUN_ID }}.json"
+
+      - name: Display final summary
         run: |
           echo "=== Final Summary ==="
           cat version-comparison-report.txt
 
-          # Check if there are any differences and potentially fail the workflow
-          if ! diff staging-plugins.txt production-plugins.txt > /dev/null 2>&1 || \
-             ! diff staging-themes.txt production-themes.txt > /dev/null 2>&1 || \
-             [ "$(cat staging-versions.json | jq -r '.wordpress_core')" != "$(cat production-versions.json | jq -r '.wordpress_core')" ]; then
+          # Check if there are any differences
+          if [[ "${{ env.CORE_MATCH }}" != "true" ]] || \
+             [[ "${{ env.PLUGINS_MATCH }}" != "true" ]] || \
+             [[ "${{ env.THEMES_MATCH }}" != "true" ]]; then
             echo ""
             echo "⚠️  Version differences detected between environments!"
-            echo "Review the artifacts for detailed comparison."
+            echo "Review the artifacts and repository files for detailed comparison."
+            
+            # Create GitHub Actions summary
+            {
+              echo "## WordPress Version Comparison Results"
+              echo ""
+              echo "| Component | Status |"
+              echo "|-----------|--------|"
+              echo "| WordPress Core | $([[ '${{ env.CORE_MATCH }}' == 'true' ]] && echo '✅ Match' || echo '❌ Different') |"
+              echo "| Plugins | $([[ '${{ env.PLUGINS_MATCH }}' == 'true' ]] && echo '✅ Match' || echo '❌ Different') |"
+              echo "| Themes | $([[ '${{ env.THEMES_MATCH }}' == 'true' ]] && echo '✅ Match' || echo '❌ Different') |"
+              echo ""
+              echo "Check the artifacts for detailed comparison files."
+            } >> $GITHUB_STEP_SUMMARY
+            
             # Uncomment the next line if you want the workflow to fail when versions differ
             # exit 1
           else
             echo ""
             echo "✅ All versions match between environments!"
+            
+            {
+              echo "## WordPress Version Comparison Results"
+              echo ""
+              echo "✅ **All versions match between staging and production environments!**"
+              echo ""
+              echo "| Component | Status |"
+              echo "|-----------|--------|"
+              echo "| WordPress Core | ✅ Match |"
+              echo "| Plugins | ✅ Match |"
+              echo "| Themes | ✅ Match |"
+            } >> $GITHUB_STEP_SUMMARY
           fi
