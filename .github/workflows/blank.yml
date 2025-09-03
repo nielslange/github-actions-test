@@ -25,11 +25,9 @@ jobs:
           script: |
             set -euo pipefail
             WP_DIR=~/www/staging.nielslange.de/public_html
-            OUT=/tmp/wp-inventory-staging
-            mkdir -p "$OUT"
             cd "$WP_DIR"
-            wp plugin list --fields=name,version,update_version,status --format=json --allow-root > "$OUT/plugins.json"
-            wp theme  list --fields=name,status,version,update_version --format=json --allow-root > "$OUT/themes.json"
+            wp plugin list --fields=name,version,update_version,status --format=json --allow-root > "$WP_DIR/plugins.json"
+            wp theme  list --fields=name,status,version,update_version --format=json --allow-root > "$WP_DIR/themes.json"
             wp core   version --extra --allow-root > "$OUT/core.json"
 
       - name: Download staging JSON
@@ -40,8 +38,8 @@ jobs:
           key: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
           passphrase: ${{ secrets.STAGING_SSH_PASSPHRASE }}
           port: ${{ secrets.STAGING_SSH_PORT }}
-          source: "/tmp/wp-inventory-staging/*.json"
-          target: "tmp/inventory/staging"
+          source: "$WP_DIR/*.json"
+          target: "staging"
           overwrite: true
 
       - name: Fetch production versions
@@ -57,12 +55,10 @@ jobs:
           script: |
             set -euo pipefail
             WP_DIR=~/www/production.nielslange.de/public_html
-            OUT=/tmp/wp-inventory-production
-            mkdir -p "$OUT"
             cd "$WP_DIR"
-            wp plugin list --fields=name,version,update_version,status --format=json --allow-root > "$OUT/plugins.json"
-            wp theme  list --fields=name,status,version,update_version --format=json --allow-root > "$OUT/themes.json"
-            wp core   version --extra --allow-root > "$OUT/core.json"
+            wp plugin list --fields=name,version,update_version,status --format=json --allow-root > "$WP_DIR/plugins.json"
+            wp theme  list --fields=name,status,version,update_version --format=json --allow-root > "$WP_DIR/themes.json"
+            wp core   version --extra --allow-root > "$WP_DIR/core.json"
 
       - name: Download production JSON
         uses: appleboy/scp-action@v0.1.7
@@ -72,105 +68,6 @@ jobs:
           key: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
           passphrase: ${{ secrets.PRODUCTION_SSH_PASSPHRASE }}
           port: ${{ secrets.PRODUCTION_SSH_PORT }}
-          source: "/tmp/wp-inventory-production/*.json"
-          target: "tmp/inventory/production"
+          source: "$WP_DIR/*.json"
+          target: "production"
           overwrite: true
-
-      - name: Compare, print report
-        run: |
-          set -euo pipefail
-          STG_DIR="tmp/inventory/staging"
-          PRD_DIR="tmp/inventory/production"
-
-          # Helpers
-          vercmp () { # prints lt, eq, gt
-            local a="$1" b="$2"
-            [[ "$a" == "$b" ]] && { echo eq; return; }
-            local first
-            first="$(printf '%s\n%s\n' "$a" "$b" | sort -V | head -n1)"
-            [[ "$first" == "$a" ]] && echo lt || echo gt
-          }
-
-          print_section () {
-            local title="$1" file="$2"
-            echo "$title"
-            jq -r '.[] | "* \(.name), version \(.version // "unknown")"' "$file"
-            echo
-          }
-
-          # Print STAGING, PRODUCTION overviews
-          echo "STAGING"
-          print_section "plugins" "$STG_DIR/plugins.json"
-          print_section "themes"  "$STG_DIR/themes.json"
-          echo "core"
-          jq -r '"* version \(.version)"' "$STG_DIR/core.json"
-          echo
-
-          echo "PRODUCTION"
-          print_section "plugins" "$PRD_DIR/plugins.json"
-          print_section "themes"  "$PRD_DIR/themes.json"
-          echo "core"
-          jq -r '"* version \(.version)"' "$PRD_DIR/core.json"
-          echo
-
-          # Build name sets
-          mapfile -t PLUGINS_ALL < <(jq -r '.[].name' "$STG_DIR/plugins.json" "$PRD_DIR/plugins.json" | sort -u)
-          mapfile -t THEMES_ALL  < <(jq -r '.[].name' "$STG_DIR/themes.json"  "$PRD_DIR/themes.json"  | sort -u)
-
-          # Lookups
-          get_ver () { # $1 file, $2 name
-            jq -r --arg n "$2" 'first(.[] | select(.name==$n)) | .version // empty' "$1"
-          }
-
-          echo "DIFFERENCE"
-          echo "plugins"
-          for name in "${PLUGINS_ALL[@]}"; do
-            sv="$(get_ver "$STG_DIR/plugins.json" "$name")"
-            pv="$(get_ver "$PRD_DIR/plugins.json" "$name")"
-            if [[ -z "$sv" && -n "$pv" ]]; then
-              echo "* $name, not installed on staging, installed $pv on production, pull from production"
-            elif [[ -n "$sv" && -z "$pv" ]]; then
-              echo "* $name, installed $sv on staging, not installed on production, push to production"
-            elif [[ -n "$sv" && -n "$pv" && "$sv" != "$pv" ]]; then
-              case "$(vercmp "$sv" "$pv")" in
-                lt) dir="pull from production" ;;
-                gt) dir="push to production" ;;
-                *)  dir="review manually" ;;
-              esac
-              echo "* $name, $sv on staging, $pv on production, $dir"
-            fi
-          done
-          echo
-
-          echo "themes"
-          for name in "${THEMES_ALL[@]}"; do
-            sv="$(get_ver "$STG_DIR/themes.json" "$name")"
-            pv="$(get_ver "$PRD_DIR/themes.json" "$name")"
-            if [[ -z "$sv" && -n "$pv" ]]; then
-              echo "* $name, not installed on staging, installed $pv on production, pull from production"
-            elif [[ -n "$sv" && -z "$pv" ]]; then
-              echo "* $name, installed $sv on staging, not installed on production, push to production"
-            elif [[ -n "$sv" && -n "$pv" && "$sv" != "$pv" ]]; then
-              case "$(vercmp "$sv" "$pv")" in
-                lt) dir="pull from production" ;;
-                gt) dir="push to production" ;;
-                *)  dir="review manually" ;;
-              esac
-              echo "* $name, $sv on staging, $pv on production, $dir"
-            fi
-          done
-          echo
-
-          echo "core"
-          STG_CORE="$(jq -r '.version' "$STG_DIR/core.json")"
-          PRD_CORE="$(jq -r '.version' "$PRD_DIR/core.json")"
-          if [[ "$STG_CORE" != "$prd_CORE" ]]; then
-            case "$(vercmp "$STG_CORE" "$PRD_CORE")" in
-              lt) dir="pull from production" ;;
-              gt) dir="push to production" ;;
-              *)  dir="review manually" ;;
-            esac
-            echo "* staging, $STG_CORE, production, $PRD_CORE, $dir"
-          else
-            echo "* versions match, $STG_CORE"
-          fi
