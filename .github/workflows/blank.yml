@@ -30,7 +30,7 @@ jobs:
             cd "$WP_DIR"
             wp plugin list --fields=name,version,update_version,status --format=json --allow-root > "$OUT/plugins.json"
             wp theme  list --fields=name,status,version,update_version --format=json --allow-root > "$OUT/themes.json"
-            wp core   version --extra --format=json --allow-root > "$OUT/core.json"
+            wp core   version --extra --allow-root > "$OUT/core.json"
 
       - name: Download staging JSON
         uses: appleboy/scp-action@v0.1.7
@@ -63,7 +63,7 @@ jobs:
             cd "$WP_DIR"
             wp plugin list --fields=name,version,update_version,status --format=json --allow-root > "$OUT/plugins.json"
             wp theme  list --fields=name,status,version,update_version --format=json --allow-root > "$OUT/themes.json"
-            wp core   version --extra --format=json --allow-root > "$OUT/core.json"
+            wp core   version --extra --allow-root > "$OUT/core.json"
 
       - name: Download production JSON
         uses: appleboy/scp-action@v0.1.7
