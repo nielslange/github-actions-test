@@ -26,9 +26,9 @@ jobs:
             set -euo pipefail
             WP_DIR=~/www/staging.nielslange.de/public_html
             cd "$WP_DIR"
-            wp plugin list --fields=name,version,update_version,status --format=json --allow-root > "$WP_DIR/plugins.json"
-            wp theme  list --fields=name,status,version,update_version --format=json --allow-root > "$WP_DIR/themes.json"
-            wp core   version --extra --allow-root > "$WP_DIR/core.json"
+            wp plugin list --fields=name,version,update_version,status --format=json --allow-root > "$WP_DIR/wp-content/uploads/plugins.json"
+            wp theme  list --fields=name,status,version,update_version --format=json --allow-root > "$WP_DIR/wp-content/uploads/themes.json"
+            wp core   version --extra --allow-root > "$WP_DIR/wp-content/uploads/core.json"
 
       - name: Download staging JSON
         uses: appleboy/scp-action@v0.1.7
@@ -38,7 +38,7 @@ jobs:
           key: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
           passphrase: ${{ secrets.STAGING_SSH_PASSPHRASE }}
           port: ${{ secrets.STAGING_SSH_PORT }}
-          source: "$WP_DIR/*.json"
+          source: "$WP_DIR/wp-content/uploads/*.json"
           target: "staging"
           overwrite: true
 
@@ -56,9 +56,9 @@ jobs:
             set -euo pipefail
             WP_DIR=~/www/production.nielslange.de/public_html
             cd "$WP_DIR"
-            wp plugin list --fields=name,version,update_version,status --format=json --allow-root > "$WP_DIR/plugins.json"
-            wp theme  list --fields=name,status,version,update_version --format=json --allow-root > "$WP_DIR/themes.json"
-            wp core   version --extra --allow-root > "$WP_DIR/core.json"
+            wp plugin list --fields=name,version,update_version,status --format=json --allow-root > "$WP_DIR/wp-content/uploads/plugins.json"
+            wp theme  list --fields=name,status,version,update_version --format=json --allow-root > "$WP_DIR/wp-content/uploads/themes.json"
+            wp core   version --extra --allow-root > "$WP_DIR/wp-content/uploads/core.json"
 
       - name: Download production JSON
         uses: appleboy/scp-action@v0.1.7
@@ -68,6 +68,6 @@ jobs:
           key: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
           passphrase: ${{ secrets.PRODUCTION_SSH_PASSPHRASE }}
           port: ${{ secrets.PRODUCTION_SSH_PORT }}
-          source: "$WP_DIR/*.json"
+          source: "$WP_DIR/wp-content/uploads/*.json"
           target: "production"
           overwrite: true
