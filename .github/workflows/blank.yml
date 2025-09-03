@@ -1,61 +1,178 @@
-name: WP inventory (artifacts)
+name: WP inventory compare, print to log
 
 on:
+  workflow_dispatch:
   schedule:
     - cron: "*/15 * * * *"
-  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  fetch:
+  compare:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      # Passphrase-free deploy keys for both hosts
-      - name: SSH agent
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: |
-            ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
-            ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
-
       - name: Fetch staging versions
-        env:
-          SSH_HOST: ${{ secrets.STAGING_SSH_HOSTNAME }}
-          SSH_USER: ${{ secrets.STAGING_SSH_USERNAME }}
-          SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
-        run: |
-          set -euo pipefail
-          mkdir -p inventory/staging
-          SSH_OPTS="-T -p $SSH_PORT -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$HOME/.ssh/known_hosts"
-          DETECT=$'bash -lc '\''for p in "$PWD" "$HOME/public_html" "$HOME/www/public_html" "/var/www/html" "/srv/www/html" "/usr/share/nginx/html"; do [ -f "$p/wp-config.php" ] || [ -d "$p/wp-includes" ] && echo "$p" && exit; done; echo "$PWD"'\'''
-          WP_PATH="$(ssh $SSH_OPTS "$SSH_USER@$SSH_HOST" "$DETECT")"
-          ssh $SSH_OPTS "$SSH_USER@$SSH_HOST" "wp plugin list --path='$WP_PATH' --fields=name,version,update_version,status --format=json" > inventory/staging/plugins.json
-          ssh $SSH_OPTS "$SSH_USER@$SSH_HOST" "wp theme  list --path='$WP_PATH' --fields=name,status,version,update_version --format=json" > inventory/staging/themes.json
-          ssh $SSH_OPTS "$SSH_USER@$SSH_HOST" "wp core   version --path='$WP_PATH' --extra" > inventory/staging/core.json
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.STAGING_SSH_HOSTNAME }}
+          username: ${{ secrets.STAGING_SSH_USERNAME }}
+          key: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.STAGING_SSH_PASSPHRASE }}
+          port: ${{ secrets.STAGING_SSH_PORT }}
+          timeout: 30s
+          command_timeout: 120s
+          script: |
+            set -euo pipefail
+            WP_DIR=~/www/staging.nielslange.de/public_html
+            OUT=/tmp/wp-inventory-staging
+            mkdir -p "$OUT"
+            cd "$WP_DIR"
+            wp plugin list --fields=name,version,update_version,status --format=json --allow-root > "$OUT/plugins.json"
+            wp theme  list --fields=name,status,version,update_version --format=json --allow-root > "$OUT/themes.json"
+            wp core   version --extra --format=json --allow-root > "$OUT/core.json"
+
+      - name: Download staging JSON
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.STAGING_SSH_HOSTNAME }}
+          username: ${{ secrets.STAGING_SSH_USERNAME }}
+          key: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.STAGING_SSH_PASSPHRASE }}
+          port: ${{ secrets.STAGING_SSH_PORT }}
+          source: "/tmp/wp-inventory-staging/*.json"
+          target: "tmp/inventory/staging"
+          overwrite: true
+          direction: download
 
       - name: Fetch production versions
-        env:
-          SSH_HOST: ${{ secrets.PRODUCTION_SSH_HOSTNAME }}
-          SSH_USER: ${{ secrets.PRODUCTION_SSH_USERNAME }}
-          SSH_PORT: ${{ secrets.PRODUCTION_SSH_PORT }}
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.PRODUCTION_SSH_HOSTNAME }}
+          username: ${{ secrets.PRODUCTION_SSH_USERNAME }}
+          key: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.PRODUCTION_SSH_PASSPHRASE }}
+          port: ${{ secrets.PRODUCTION_SSH_PORT }}
+          timeout: 30s
+          command_timeout: 120s
+          script: |
+            set -euo pipefail
+            WP_DIR=~/www/production.nielslange.de/public_html
+            OUT=/tmp/wp-inventory-production
+            mkdir -p "$OUT"
+            cd "$WP_DIR"
+            wp plugin list --fields=name,version,update_version,status --format=json --allow-root > "$OUT/plugins.json"
+            wp theme  list --fields=name,status,version,update_version --format=json --allow-root > "$OUT/themes.json"
+            wp core   version --extra --format=json --allow-root > "$OUT/core.json"
+
+      - name: Download production JSON
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.PRODUCTION_SSH_HOSTNAME }}
+          username: ${{ secrets.PRODUCTION_SSH_USERNAME }}
+          key: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.PRODUCTION_SSH_PASSPHRASE }}
+          port: ${{ secrets.PRODUCTION_SSH_PORT }}
+          source: "/tmp/wp-inventory-production/*.json"
+          target: "tmp/inventory/production"
+          overwrite: true
+          direction: download
+
+      - name: Compare, print report
         run: |
           set -euo pipefail
-          mkdir -p inventory/production
-          SSH_OPTS="-T -p $SSH_PORT -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$HOME/.ssh/known_hosts"
-          DETECT=$'bash -lc '\''for p in "$PWD" "$HOME/public_html" "$HOME/www/public_html" "/var/www/html" "/srv/www/html" "/usr/share/nginx/html"; do [ -f "$p/wp-config.php" ] || [ -d "$p/wp-includes" ] && echo "$p" && exit; done; echo "$PWD"'\'''
-          WP_PATH="$(ssh $SSH_OPTS "$SSH_USER@$SSH_HOST" "$DETECT")"
-          ssh $SSH_OPTS "$SSH_USER@$SSH_HOST" "wp plugin list --path='$WP_PATH' --fields=name,version,update_version,status --format=json" > inventory/production/plugins.json
-          ssh $SSH_OPTS "$SSH_USER@$SSH_HOST" "wp theme  list --path='$WP_PATH' --fields=name,status,version,update_version --format=json" > inventory/production/themes.json
-          ssh $SSH_OPTS "$SSH_USER@$SSH_HOST" "wp core   version --path='$WP_PATH' --extra" > inventory/production/core.json
+          STG_DIR="tmp/inventory/staging"
+          PRD_DIR="tmp/inventory/production"
 
-      - name: Upload inventory artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: wp-inventory-${{ github.run_number }}
-          path: inventory/**
-          retention-days: 30
+          # Helpers
+          vercmp () { # prints lt, eq, gt
+            local a="$1" b="$2"
+            [[ "$a" == "$b" ]] && { echo eq; return; }
+            local first
+            first="$(printf '%s\n%s\n' "$a" "$b" | sort -V | head -n1)"
+            [[ "$first" == "$a" ]] && echo lt || echo gt
+          }
+
+          print_section () {
+            local title="$1" file="$2"
+            echo "$title"
+            jq -r '.[] | "* \(.name), version \(.version // "unknown")"' "$file"
+            echo
+          }
+
+          # Print STAGING, PRODUCTION overviews
+          echo "STAGING"
+          print_section "plugins" "$STG_DIR/plugins.json"
+          print_section "themes"  "$STG_DIR/themes.json"
+          echo "core"
+          jq -r '"* version \(.version)"' "$STG_DIR/core.json"
+          echo
+
+          echo "PRODUCTION"
+          print_section "plugins" "$PRD_DIR/plugins.json"
+          print_section "themes"  "$PRD_DIR/themes.json"
+          echo "core"
+          jq -r '"* version \(.version)"' "$PRD_DIR/core.json"
+          echo
+
+          # Build name sets
+          mapfile -t PLUGINS_ALL < <(jq -r '.[].name' "$STG_DIR/plugins.json" "$PRD_DIR/plugins.json" | sort -u)
+          mapfile -t THEMES_ALL  < <(jq -r '.[].name' "$STG_DIR/themes.json"  "$PRD_DIR/themes.json"  | sort -u)
+
+          # Lookups
+          get_ver () { # $1 file, $2 name
+            jq -r --arg n "$2" 'first(.[] | select(.name==$n)) | .version // empty' "$1"
+          }
+
+          echo "DIFFERENCE"
+          echo "plugins"
+          for name in "${PLUGINS_ALL[@]}"; do
+            sv="$(get_ver "$STG_DIR/plugins.json" "$name")"
+            pv="$(get_ver "$PRD_DIR/plugins.json" "$name")"
+            if [[ -z "$sv" && -n "$pv" ]]; then
+              echo "* $name, not installed on staging, installed $pv on production, pull from production"
+            elif [[ -n "$sv" && -z "$pv" ]]; then
+              echo "* $name, installed $sv on staging, not installed on production, push to production"
+            elif [[ -n "$sv" && -n "$pv" && "$sv" != "$pv" ]]; then
+              case "$(vercmp "$sv" "$pv")" in
+                lt) dir="pull from production" ;;
+                gt) dir="push to production" ;;
+                *)  dir="review manually" ;;
+              esac
+              echo "* $name, $sv on staging, $pv on production, $dir"
+            fi
+          done
+          echo
+
+          echo "themes"
+          for name in "${THEMES_ALL[@]}"; do
+            sv="$(get_ver "$STG_DIR/themes.json" "$name")"
+            pv="$(get_ver "$PRD_DIR/themes.json" "$name")"
+            if [[ -z "$sv" && -n "$pv" ]]; then
+              echo "* $name, not installed on staging, installed $pv on production, pull from production"
+            elif [[ -n "$sv" && -z "$pv" ]]; then
+              echo "* $name, installed $sv on staging, not installed on production, push to production"
+            elif [[ -n "$sv" && -n "$pv" && "$sv" != "$pv" ]]; then
+              case "$(vercmp "$sv" "$pv")" in
+                lt) dir="pull from production" ;;
+                gt) dir="push to production" ;;
+                *)  dir="review manually" ;;
+              esac
+              echo "* $name, $sv on staging, $pv on production, $dir"
+            fi
+          done
+          echo
+
+          echo "core"
+          STG_CORE="$(jq -r '.version' "$STG_DIR/core.json")"
+          PRD_CORE="$(jq -r '.version' "$PRD_DIR/core.json")"
+          if [[ "$STG_CORE" != "$prd_CORE" ]]; then
+            case "$(vercmp "$STG_CORE" "$PRD_CORE")" in
+              lt) dir="pull from production" ;;
+              gt) dir="push to production" ;;
+              *)  dir="review manually" ;;
+            esac
+            echo "* staging, $STG_CORE, production, $PRD_CORE, $dir"
+          else
+            echo "* versions match, $STG_CORE"
+          fi
