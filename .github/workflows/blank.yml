@@ -2,8 +2,8 @@ name: WP inventory compare, print to log
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "*/15 * * * *"
+  # schedule:
+  #  - cron: "*/15 * * * *"
 
 permissions:
   contents: read
